@@ -1,0 +1,54 @@
+name: Build ImmortalWrt BPI-R3 (ETU ES8524 2.5G)
+on:
+  workflow_dispatch:
+    inputs:
+      immortalwrt_branch:
+        description: 'ImmortalWrt 分支或版本標籤 (例如 v25.12.2 或 openwrt-25.12)'
+        required: true
+        default: 'v25.12.2'
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 1. 檢出本倉庫配置
+        uses: actions/checkout@v4
+      - name: 2. 安裝 Ubuntu 編譯依賴環境
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib \
+          git gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev \
+          libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev libtool \
+          lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply \
+          python3-docutils python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig \
+          texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+      - name: 3. 下載 ImmortalWrt 官方源碼
+        run: |
+          git clone --depth 1 --branch ${{ github.event.inputs.immortalwrt_branch }} https://github.com immortalwrt
+      - name: 4. 更新並安裝 Feeds 套件庫
+        working-directory: immortalwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+      - name: 5. 預先解壓 Linux 內核並寫入 ETU ES8524 2.5G 白名單
+        working-directory: immortalwrt
+        run: |
+          cp ../seed.config .config
+          make defconfig
+          make target/linux/prepare V=s
+          SFP_FILE=$(find build_dir/target-* -name "sfp.c" | head -n 1)
+          echo "找到 sfp.c 路徑: $SFP_FILE"
+          grep -q "3FE46541AA" "$SFP_FILE"
+          sed -i '/3FE46541AA/a \	SFP_QUIRK_F("ETU", "ES8524-3LCD03", sfp_fixup_2500basex),' "$SFP_FILE"
+          grep -C 2 "ES8524-3LCD03" "$SFP_FILE"
+      - name: 6. 下載所有套件源碼包
+        working-directory: immortalwrt
+        run: make download -j$(nproc)
+      - name: 7. 開始編譯 ImmortalWrt BPI-R3 固件
+        working-directory: immortalwrt
+        run: make -j$(nproc) V=s
+      - name: 8. 上傳編譯完成嘅固件 (Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt-${{ github.event.inputs.immortalwrt_branch }}-BPI-R3-ES8524
+          path: immortalwrt/bin/targets/mediatek/filogic/*bananapi_bpi-r3*sysupgrade*
