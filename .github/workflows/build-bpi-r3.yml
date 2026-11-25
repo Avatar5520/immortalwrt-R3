@@ -94,8 +94,10 @@ jobs:
           ' "$LINUX_DIR/$SFP_REL"
           
           mkdir -p target/linux/generic/hack-6.12
-          (cd "$LINUX_DIR" && diff -u "$SFP_REL.orig" "$SFP_REL" || true) > target/linux/generic/hack-6.12/999-sfp-etu-es8524.patch
+          (cd "$LINUX_DIR" && diff -u --label "a/$SFP_REL" --label "b/$SFP_REL" "$SFP_REL.orig" "$SFP_REL" || true) > target/linux/generic/hack-6.12/999-sfp-etu-es8524.patch
           rm -f "$LINUX_DIR/$SFP_REL.orig"
+
+          
           
           echo "=== 驗證生成的 Patch 內容 ==="
           cat target/linux/generic/hack-6.12/999-sfp-etu-es8524.patch
