@@ -12,6 +12,7 @@ jobs:
     steps:
       - name: 1. 檢出本倉庫配置
         uses: actions/checkout@v4
+
       - name: 2. 安裝 Ubuntu 編譯依賴環境
         run: |
           sudo apt-get update
@@ -22,15 +23,18 @@ jobs:
           lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply \
           python3-docutils python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig \
           texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+
       - name: 3. 下載 ImmortalWrt 官方源碼
         run: |
           REPO_URL="https://github.com""/immortalwrt/immortalwrt.git"
           git clone --depth 1 --branch ${{ github.event.inputs.immortalwrt_branch }} "$REPO_URL" immortalwrt
+
       - name: 4. 更新並安裝 Feeds 套件庫
         working-directory: immortalwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+
       - name: 4.5 啟用編譯工具鏈及源碼快取 (加速日後編譯 R3/R4)
         uses: actions/cache@v4
         with:
@@ -41,38 +45,69 @@ jobs:
           restore-keys: |
             immortalwrt-${{ github.event.inputs.immortalwrt_branch }}-
             immortalwrt-
-      - name: 5. 預先解壓 Linux 內核並自動適配寫入 ETU ES8524 2.5G 白名單
+
+      - name: 5. 生成 Linux 6.12 內核 ETU ES8524 2.5G 標準補丁
         working-directory: immortalwrt
         run: |
           cp ../seed.config .config
           make defconfig
           make target/linux/prepare V=s
-          SFP_FILE=$(find build_dir/target-* -name "sfp.c" | head -n 1)
-          echo "找到 sfp.c 路徑: $SFP_FILE"
+          
+          LINUX_DIR=$(find build_dir/target-* -maxdepth 2 -name "linux-6.12.*" -type d | head -n 1)
+          SFP_REL="drivers/net/phy/sfp.c"
+          cp "$LINUX_DIR/$SFP_REL" "$LINUX_DIR/$SFP_REL.orig"
+          
           python3 -c '
           import sys
           path = sys.argv[1]
           with open(path, "r") as f:
               lines = f.readlines()
+          
           out = []
+          block = []
+          in_target = False
           inserted = False
+          
           for line in lines:
-              out.append(line)
               if "3FE46541AA" in line and not inserted:
-                  new_line = line.replace("ALCATELLUCENT", "ETU").replace("ALCATEL", "ETU").replace("3FE46541AA", "ES8524-3LCD03")
-                  out.append(new_line)
-                  inserted = True
-          assert inserted, "找不到 3FE46541AA 參考行"
+                  in_target = True
+              
+              if in_target:
+                  block.append(line)
+                  out.append(line)
+                  if line.rstrip().endswith("),"):
+                      new_block = [
+                          l.replace("ALCATELLUCENT", "ETU")
+                           .replace("ALCATEL", "ETU")
+                           .replace("3FE46541AA", "ES8524-3LCD03")
+                          for l in block
+                      ]
+                      out.extend(new_block)
+                      in_target = False
+                      inserted = True
+              else:
+                  out.append(line)
+          
+          assert inserted, "找不到完整的 3FE46541AA 區塊"
           with open(path, "w") as f:
               f.writelines(out)
-          ' "$SFP_FILE"
-          grep -C 2 "ES8524-3LCD03" "$SFP_FILE"
+          ' "$LINUX_DIR/$SFP_REL"
+          
+          mkdir -p target/linux/generic/hack-6.12
+          (cd "$LINUX_DIR" && diff -u "$SFP_REL.orig" "$SFP_REL" || true) > target/linux/generic/hack-6.12/999-sfp-etu-es8524.patch
+          rm -f "$LINUX_DIR/$SFP_REL.orig"
+          
+          echo "=== 驗證生成的 Patch 內容 ==="
+          cat target/linux/generic/hack-6.12/999-sfp-etu-es8524.patch
+
       - name: 6. 下載所有套件源碼包
         working-directory: immortalwrt
         run: make download -j$(nproc)
+
       - name: 7. 開始編譯 ImmortalWrt BPI-R3 固件
         working-directory: immortalwrt
         run: make -j$(nproc) || make -j1 V=s
+
       - name: 8. 上傳編譯完成嘅固件 (Artifacts)
         uses: actions/upload-artifact@v4
         with:
