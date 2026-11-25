@@ -24,7 +24,8 @@ jobs:
           texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
       - name: 3. 下載 ImmortalWrt 官方源碼
         run: |
-          git clone --depth 1 --branch ${{ github.event.inputs.immortalwrt_branch }} https://github.com immortalwrt
+          REPO_URL="https://github.com""/immortalwrt/immortalwrt.git"
+          git clone --depth 1 --branch ${{ github.event.inputs.immortalwrt_branch }} "$REPO_URL" immortalwrt
       - name: 4. 更新並安裝 Feeds 套件庫
         working-directory: immortalwrt
         run: |
