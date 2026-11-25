@@ -31,7 +31,17 @@ jobs:
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-      - name: 5. 預先解壓 Linux 內核並寫入 ETU ES8524 2.5G 白名單
+      - name: 4.5 啟用編譯工具鏈及源碼快取 (加速日後編譯 R3/R4)
+        uses: actions/cache@v4
+        with:
+          path: |
+            immortalwrt/dl
+            immortalwrt/staging_dir/host*
+          key: immortalwrt-${{ github.event.inputs.immortalwrt_branch }}-${{ hashFiles('seed.config') }}
+          restore-keys: |
+            immortalwrt-${{ github.event.inputs.immortalwrt_branch }}-
+            immortalwrt-
+      - name: 5. 預先解壓 Linux 內核並自動適配寫入 ETU ES8524 2.5G 白名單
         working-directory: immortalwrt
         run: |
           cp ../seed.config .config
@@ -39,15 +49,30 @@ jobs:
           make target/linux/prepare V=s
           SFP_FILE=$(find build_dir/target-* -name "sfp.c" | head -n 1)
           echo "找到 sfp.c 路徑: $SFP_FILE"
-          grep -q "3FE46541AA" "$SFP_FILE"
-          sed -i '/3FE46541AA/a \	SFP_QUIRK_F("ETU", "ES8524-3LCD03", sfp_fixup_2500basex),' "$SFP_FILE"
+          python3 -c '
+          import sys
+          path = sys.argv[1]
+          with open(path, "r") as f:
+              lines = f.readlines()
+          out = []
+          inserted = False
+          for line in lines:
+              out.append(line)
+              if "3FE46541AA" in line and not inserted:
+                  new_line = line.replace("ALCATELLUCENT", "ETU").replace("ALCATEL", "ETU").replace("3FE46541AA", "ES8524-3LCD03")
+                  out.append(new_line)
+                  inserted = True
+          assert inserted, "找不到 3FE46541AA 參考行"
+          with open(path, "w") as f:
+              f.writelines(out)
+          ' "$SFP_FILE"
           grep -C 2 "ES8524-3LCD03" "$SFP_FILE"
       - name: 6. 下載所有套件源碼包
         working-directory: immortalwrt
         run: make download -j$(nproc)
       - name: 7. 開始編譯 ImmortalWrt BPI-R3 固件
         working-directory: immortalwrt
-        run: make -j$(nproc) V=s
+        run: make -j$(nproc) || make -j1 V=s
       - name: 8. 上傳編譯完成嘅固件 (Artifacts)
         uses: actions/upload-artifact@v4
         with:
