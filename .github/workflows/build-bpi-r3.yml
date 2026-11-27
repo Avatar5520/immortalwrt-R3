@@ -1,5 +1,4 @@
 name: Build ImmortalWrt BPI-R3 (ETU ES8524 2.5G)
-
 on:
   workflow_dispatch:
     inputs:
@@ -7,11 +6,9 @@ on:
         description: 'ImmortalWrt 分支或版本標籤 (例如 v25.12.2 或 openwrt-25.12)'
         required: true
         default: 'v25.12.2'
-
 jobs:
   build:
     runs-on: ubuntu-24.04
-
     steps:
       - name: 1. 檢出本倉庫配置
         uses: actions/checkout@v4
@@ -29,8 +26,8 @@ jobs:
 
       - name: 3. 下載 ImmortalWrt 官方源碼
         run: |
-          REPO_URL="https://github.com"
-          git clone --depth 1 --branch "${{ github.event.inputs.immortalwrt_branch }}" "$REPO_URL" immortalwrt
+          REPO_URL="https://github.com""/immortalwrt/immortalwrt.git"
+          git clone --depth 1 --branch ${{ github.event.inputs.immortalwrt_branch }} "$REPO_URL" immortalwrt
 
       - name: 4. 更新並安裝 Feeds 套件庫
         working-directory: immortalwrt
@@ -38,7 +35,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 4.5 啟用編譯工具鏈及源碼快取 (加速日後編譯)
+      - name: 4.5 啟用編譯工具鏈及源碼快取 (加速日後編譯 R3/R4)
         uses: actions/cache@v4
         with:
           path: |
@@ -107,14 +104,9 @@ jobs:
         working-directory: immortalwrt
         run: |
           mkdir -p files/etc/uci-defaults
-          cat << 'EOF' > files/etc/uci-defaults/99-fix-apk-repo
-          #!/bin/sh
-          sed -i "s|mirrors.vsean.net/immortalwrt|downloads.immortalwrt.org|g" /etc/apk/repositories.d/*.list 2>/dev/null || true
-          sed -i "s|mirrors.vsean.net/openwrt|downloads.immortalwrt.org|g" /etc/apk/repositories.d/*.list 2>/dev/null || true
-          sed -i "/\/video\/packages\.adb/s/^/#/" /etc/apk/repositories.d/*.list 2>/dev/null || true
-          exit 0
-          EOF
+          printf '#!/bin/sh\nsed -i "s|mirrors.vsean.net/immortalwrt|downloads.immortalwrt.org|g" /etc/apk/repositories.d/*.list 2>/dev/null || true\nsed -i "s|mirrors.vsean.net/openwrt|downloads.immortalwrt.org|g" /etc/apk/repositories.d/*.list 2>/dev/null || true\nsed -i "/\/video\/packages\.adb/s/^/#/" /etc/apk/repositories.d/*.list 2>/dev/null || true\nexit 0\n' > files/etc/uci-defaults/99-fix-apk-repo
           chmod +x files/etc/uci-defaults/99-fix-apk-repo
+
 
       - name: 6. 下載所有套件源碼包
         working-directory: immortalwrt
