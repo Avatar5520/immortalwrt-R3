@@ -46,20 +46,24 @@ jobs:
             immortalwrt-${{ github.event.inputs.immortalwrt_branch }}-
             immortalwrt-
 
-      - name: 5. 生成 Linux 6.12 內核 ETU ES8524 2.5G 標準補丁
+      - name: 5. 生成動態內核版本 ETU ES8524 2.5G 標準補丁
         working-directory: immortalwrt
         run: |
           cp ../seed.config .config
           make defconfig
           make target/linux/prepare V=s
           
-          LINUX_DIR=$(find build_dir/target-* -maxdepth 2 -name "linux-6.12.*" -type d | head -n 1)
+          SFP_FULL=$(find build_dir/target-* -path "*/linux-[0-9]*/drivers/net/phy/sfp.c" | head -n 1)
+          LINUX_DIR="${SFP_FULL%/drivers/net/phy/sfp.c}"
+          KVER=$(basename "$LINUX_DIR" | sed -E 's/^linux-([0-9]+\.[0-9]+).*/\1/')
+          echo "偵測到目標內核目錄: $LINUX_DIR (對應 hack-$KVER)"
+          
           SFP_REL="drivers/net/phy/sfp.c"
           cp "$LINUX_DIR/$SFP_REL" "$LINUX_DIR/$SFP_REL.orig"
           
-          python3 -c '
-          import sys
-          path = sys.argv[1]
+          SFP_TARGET="$LINUX_DIR/$SFP_REL" python3 -c '
+          import os
+          path = os.environ["SFP_TARGET"]
           with open(path, "r") as f:
               lines = f.readlines()
           
@@ -91,14 +95,15 @@ jobs:
           assert inserted, "找不到完整的 3FE46541AA 區塊"
           with open(path, "w") as f:
               f.writelines(out)
-          ' "$LINUX_DIR/$SFP_REL"
+          '
           
-          mkdir -p target/linux/generic/hack-6.12
-          (cd "$LINUX_DIR" && diff -u --label "a/$SFP_REL" --label "b/$SFP_REL" "$SFP_REL.orig" "$SFP_REL" || true) > target/linux/generic/hack-6.12/999-sfp-etu-es8524.patch
+          mkdir -p "target/linux/generic/hack-$KVER"
+          (cd "$LINUX_DIR" && diff -u --label "a/$SFP_REL" --label "b/$SFP_REL" "$SFP_REL.orig" "$SFP_REL" || true) > "target/linux/generic/hack-$KVER/999-sfp-etu-es8524.patch"
           rm -f "$LINUX_DIR/$SFP_REL.orig"
 
           echo "=== 驗證生成的 Patch 內容 ==="
-          cat target/linux/generic/hack-6.12/999-sfp-etu-es8524.patch
+          cat "target/linux/generic/hack-$KVER/999-sfp-etu-es8524.patch"
+
 
       - name: 5.5 配置開機自動修復 APK 軟件源
         working-directory: immortalwrt
